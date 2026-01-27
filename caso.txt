@@ -1,0 +1,19 @@
+{
+    "nome": "Juliana Paes Ribeiro",
+    "idade": 34,
+    "email": "karol.azevedo127@gmail.com"
+}
+
+
+{
+    "ciclo_menstrual": "Meu ciclo menstrual ainda acontece, mas ficou um pouco irregular no último ano. Antes ele vinha certinho a cada 28 dias, e agora às vezes atrasa uma semana ou chega um pouco antes. O fluxo também parece mais leve do que costumava ser. Eu ainda não fiquei 12 meses seguidos sem menstruar.",
+    "sintomas_fisicos": "Tenho notado algumas mudanças. Sinto ondas de calor principalmente à noite, e isso atrapalha meu sono, que anda mais leve e interrompido. Também percebi diminuição da libido e um pouco de ressecamento vaginal. Ganhei alguns quilos, mesmo sem ter mudado muito a alimentação, e meu cabelo parece estar caindo mais do que o normal.",
+    "saude_emocional": "Meu emocional está um pouco instável. Tenho períodos de irritação e ansiedade sem um motivo claro, e às vezes me sinto mais desanimada. Também percebo que minha memória e concentração estão um pouco piores nas últimas semanas.",
+    "habitos_historico": "No momento tomo vitaminas e magnésio. Não tenho doenças crônicas, mas na minha família há casos de hipertensão e minha mãe teve câncer de mama. Tento manter uma alimentação equilibrada, mas poderia melhorar. Faço caminhada algumas vezes por semana. Bebo álcool socialmente e não fumo.",
+    "exames_tratamentos": "Meu último Papanicolau foi há cerca de um ano. A mamografia fiz há dois anos e nunca fiz densitometria óssea. Ainda não tentei nenhum tratamento específico para os sintomas, mas gostaria de conversar sobre opções como reposição hormonal e outras alternativas que possam aliviar as mudanças que estou sentindo."
+}
+
+{
+    "confirmation": true
+}
+
