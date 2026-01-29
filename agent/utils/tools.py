@@ -74,29 +74,6 @@ def get_llm():
         )
     return _llm_instance
 
-# --- Inicialização de Clientes ---
-
-# Configuração de Embeddings
-# if GEMINI_EMBEDD:
-#     EMBEDDING_MODEL_NAME = "text-embedding-004"
-#     embedding_client = genai.Client(api_key=os.getenv("GOOGLE_GENAI_API_KEY"))
-# else:
-#     EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-#     embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-
-# qdrant_client = QdrantClient(
-#     url=os.getenv("QDRANT_URL"),
-#     api_key=os.getenv("QDRANT_API_KEY")
-# )
-
-# llm_ = ChatGoogleGenerativeAI(
-#     api_key=os.getenv("GOOGLE_API_KEY"),
-#     model=MODEL_NAME,
-#     temperature=0,
-#     max_tokens=2048,
-#     timeout=None,
-#     max_retries=2,            
-# )
 
 # --- Funções Auxiliares ---
 
@@ -307,37 +284,6 @@ def send_pdf(runtime: ToolRuntime) -> str:
         msg['From'] = remetente
         msg['To'] = email
         
-        # corpo_email = f"""
-        # <html>
-        # <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-        #     <h2 style="color: #d946a6;">Olá, {nome}! 🌸</h2>
-            
-        #     <p>Seu guia personalizado sobre menopausa está pronto!</p>
-            
-        #     <p>Preparamos este documento especialmente para você, com base nas informações que você compartilhou. 
-        #     Ele foi criado para ajudá-la a se preparar melhor para sua consulta médica.</p>
-            
-        #     <p><strong>📎 O guia está anexado a este email em formato PDF.</strong></p>
-            
-        #     <h3 style="color: #e879b9;">💡 Dicas para usar seu guia:</h3>
-        #     <ul>
-        #         <li>Leia o guia com calma antes da consulta</li>
-        #         <li>Faça anotações adicionais se necessário</li>
-        #         <li>Leve-o impresso ou em formato digital para a consulta</li>
-        #         <li>Não hesite em fazer todas as perguntas listadas</li>
-        #     </ul>
-            
-        #     <p style="margin-top: 20px;">Desejamos que sua consulta seja produtiva e esclarecedora! 💕</p>
-            
-        #     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-            
-        #     <p style="font-size: 0.9em; color: #666;">
-        #         <em>Este é um email automático. Se você tiver dúvidas ou precisar de ajuda, 
-        #         sinta-se à vontade para conversar comigo novamente!</em>
-        #     </p>
-        # </body>
-        # </html>
-        # """
         
         msg.attach(MIMEText(corpo_email, 'html', 'utf-8'))
         
