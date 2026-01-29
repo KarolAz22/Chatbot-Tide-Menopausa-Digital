@@ -9,14 +9,13 @@ from langgraph.types import interrupt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 
-# Imports do seu projeto (mantidos)
 from agent.utils.prompt import CHAT_SYSTEM_PROMPT, WELCOME_MESSAGE, ROUTER_PROMPT, GUIDE_SYSTEM_PROMPT
 from agent.utils.state import StateSchema
 from agent.utils.tools import TOOLS_CHAT
 
 MODEL_NAME = "gemini-2.5-flash-lite"
 
-def create_agent_graph():
+def create_agent_graph(checkpointer=None): #Todo
 
     llm = ChatGoogleGenerativeAI(
         api_key=os.getenv("GOOGLE_API_KEY"),
@@ -340,6 +339,6 @@ def create_agent_graph():
 
     graph.add_edge("generate_guide", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer) #Todo
 
 graph = create_agent_graph()
