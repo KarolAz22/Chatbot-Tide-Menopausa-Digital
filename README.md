@@ -37,6 +37,11 @@ Este projeto utiliza o Qdrant para armazenamento de memória vetorial.
 2. Crie um novo **Cluster** (o tier gratuito é suficiente) Com nome **Tide**.
 3. Vá em **Data Access Control** e gere uma nova **API Key**.
 4. Copie a **URL** do cluster e a **API Key** para o seu arquivo `.env` (como mostrado acima).
+5. Rode o comando na raiz do projeto:
+
+```bash
+uv pip install -r requirements.txt
+```
 
 ---
 
