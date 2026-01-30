@@ -188,6 +188,13 @@ def send_pdf(runtime: ToolRuntime) -> str:
 
     try:
        
+       # Se o guia estiver salvo como lista (vários pedaços), junta tudo em um texto só
+        if isinstance(guide, list):
+            guide = "\n".join(guide)
+        
+        # Garante que é string antes de continuar
+        guide = str(guide)
+
         remetente = os.getenv("REMETENTE")
         senha = os.getenv("EMAIL_PASSWORD")
         
@@ -196,7 +203,7 @@ def send_pdf(runtime: ToolRuntime) -> str:
         # Converter Markdown para HTML
         guide_html = markdown.markdown(guide, extensions=['extra', 'nl2br'])
         
-        # Estilização CSS (Mantida igual para consistência visual)
+        # Estilização CSS
         styled_guide_html = f"""
         <!DOCTYPE html>
         <html>

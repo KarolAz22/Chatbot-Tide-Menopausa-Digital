@@ -13,80 +13,75 @@ from agent.utils.prompt import CHAT_SYSTEM_PROMPT, WELCOME_MESSAGE, ROUTER_PROMP
 from agent.utils.state import StateSchema
 from agent.utils.tools import TOOLS_CHAT
 
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-3-flash-preview"
 
-def create_agent_graph(checkpointer=None): #Todo
+def create_agent_graph(checkpointer=None):
 
+    # Configuração do LLM
     llm = ChatGoogleGenerativeAI(
         api_key=os.getenv("GOOGLE_API_KEY"),
         model=MODEL_NAME,
         temperature=0,
         max_tokens=20000,
         timeout=None,
-        max_retries=1,            
+        max_retries=1,
+        transport="rest" 
     )
 
     graph = StateGraph(state_schema=StateSchema)
 
-    # --- NODES ---
-
-    def welcome_node(state: StateSchema) -> StateSchema:
-
-        state["confirmation"] = False
-
-        return {
-            "messages": [AIMessage(content=WELCOME_MESSAGE)]
-        }
-  
-
-    def router_node(state: StateSchema) -> str:
-
-        class RouterOutput(BaseModel):
-            route: str
-
-        system_message = SystemMessage(content=ROUTER_PROMPT)
-        
-        # Otimização: A router decide o fluxo macro
-        response = llm.with_structured_output(RouterOutput).invoke([system_message, *state["messages"]])
-
-        route = response.route
-        if route not in ["chat_node", "guide_node"]:
-            route = "chat_node"
-            
-        return {"route": route}
-
-    def chat_node(state: StateSchema) -> StateSchema:
-
-        system_prompt = SystemMessage(content=CHAT_SYSTEM_PROMPT)
-        
-        # Bind de ferramentas
-        response = llm.bind_tools(tools=TOOLS_CHAT).invoke([system_prompt, *state["messages"]])
-
-        # Normalizar o conteúdo da resposta se vier fragmentado (comum em streaming/tools)
-        if hasattr(response, 'content') and isinstance(response.content, list):
+    # --- FUNÇÃO AUXILIAR DE NORMALIZAÇÃO ---
+    def normalize_content(content):
+        """Converte listas de dicionários do Gemini em texto puro string."""
+        if isinstance(content, list):
             text_parts = []
-            for item in response.content:
+            for item in content:
                 if isinstance(item, dict) and item.get('type') == 'text':
                     text_parts.append(item.get('text', ''))
                 elif isinstance(item, str):
                     text_parts.append(item)
-            response.content = ''.join(text_parts)
+            return "".join(text_parts)
+        return str(content)
 
+    # --- NODES ---
+
+    def welcome_node(state: StateSchema) -> StateSchema:
+        state["confirmation"] = False
         return {
-            "messages": [response],
+            "messages": [AIMessage(content=WELCOME_MESSAGE)]
         }
+  
+    def router_node(state: StateSchema) -> str:
+        class RouterOutput(BaseModel):
+            route: str
 
-    # --- NÓS DO FLUXO DE GUIA (Mantidos conforme original) ---
+        system_message = SystemMessage(content=ROUTER_PROMPT)
+        try:
+            response = llm.with_structured_output(RouterOutput).invoke([system_message, *state["messages"]])
+            route = response.route
+        except Exception:
+            route = "chat_node"
+
+        if route not in ["chat_node", "guide_node"]:
+            route = "chat_node"
+        return {"route": route}
+
+    def chat_node(state: StateSchema) -> StateSchema:
+        system_prompt = SystemMessage(content=CHAT_SYSTEM_PROMPT)
+        response = llm.bind_tools(tools=TOOLS_CHAT).invoke([system_prompt, *state["messages"]])
+        
+        # Normaliza a resposta do chat comum
+        response.content = normalize_content(response.content)
+        
+        return {"messages": [response]}
+
     def guide_node(state: StateSchema) -> StateSchema:
-
         return {
             "messages": [AIMessage(content="Antes de prosseguirmos, gostaria de fazer algumas perguntas para personalizar melhor o guia para você.")]
         }
     
     def personal_questions(state: StateSchema) -> StateSchema:
-
         user_data = state.get("user_data", {})
-
         questions_prompt = (
             "Por favor, responda as seguintes perguntas pessoais:\n\n"
             "1. Qual é seu nome?\n"
@@ -94,7 +89,6 @@ def create_agent_graph(checkpointer=None): #Todo
             "3. Qual é o seu email? (Usaremos para enviar o guia personalizado)\n\n"
         )
         answer = interrupt(questions_prompt)
-
         user_data["nome"] = answer.get("nome", "Não informado")
         user_data["idade"] = answer.get("idade", "Não informado")
         user_data["email"] = answer.get("email", "Não informado")
@@ -140,23 +134,16 @@ def create_agent_graph(checkpointer=None): #Todo
         else:
             header = "Obrigado por fornecer essas informações. Aqui está um resumo dos dados que você compartilhou:\n"
             sep = "────────────────────────────────────────\n"
-
             lines = [header, sep]
-
             for key, value in user_data.items():
-                # torna a chave mais legível: 'tempo_menopausa' -> 'Tempo menopausa'
+                if key == "guide": continue 
                 pretty_key = key.replace("_", " ").capitalize()
-                val = ", ".join(f"{k}: {v}" for k, v in value.items()) if isinstance(value, dict) else str(value)
+                val = str(value)
                 lines.append(f"• {pretty_key}: {val}\n")
-
             lines.append(sep)
-            lines.append("Se quiser alterar algum item, clique em ignorar para recomeçar.")
-
+            lines.append("Se quiser alterar algo, clique em 'Corrigir'. Caso contrário, confirme.")
             content = "\n".join(lines)
-
         return {"messages": [AIMessage(content=content)]}
-
-        
 
     def ask_confirmation(state: StateSchema) -> StateSchema:
 
@@ -166,9 +153,7 @@ def create_agent_graph(checkpointer=None): #Todo
         return {"confirmation": answer["confirmation"]}
 
     def generate_guide(state: StateSchema) -> StateSchema:
-
         user_data = state.get("user_data", {}) or {}
-
         system_message = SystemMessage(content=GUIDE_SYSTEM_PROMPT)
 
         # Mapeamento das perguntas feitas ao usuário
@@ -188,19 +173,13 @@ def create_agent_graph(checkpointer=None): #Todo
         ]
 
         filtered_data = {k: v for k, v in user_data.items() if k != "guide"}
-
-        if not filtered_data or len(filtered_data) == 0:
-            # se não houver dados, criar um guia genérico
-            prompt_parts.append("Informações do paciente: Dados não informados\n")
-        else:
-            prompt_parts.append("=== PERGUNTAS E RESPOSTAS DA PACIENTE ===\n\n")
+        
+        if filtered_data:
+            prompt_parts.append("=== DADOS DA PACIENTE ===\n\n")
             for key, value in filtered_data.items():
-                # Adiciona a pergunta correspondente
-                question = questions_map.get(key, key.replace("_", " ").capitalize())
-                
-                if value and value != "Não informado":
-                    prompt_parts.append(f"PERGUNTA: {question}\n")
-                    prompt_parts.append(f"RESPOSTA: {value}\n\n")
+                label = questions_map.get(key, key)
+                val_str = str(value) if value is not None else "Não informado"
+                prompt_parts.append(f"{label} {val_str}\n\n")
 
         prompt_parts.append(
             "\nGere o guia completo seguindo EXATAMENTE o formato especificado no system prompt, "
@@ -213,53 +192,22 @@ def create_agent_graph(checkpointer=None): #Todo
         try:
             response = llm.invoke([system_message, user_message])
             
-            if not response or not response.content:
-                # Fallback se não houver conteúdo
-                fallback_guide_content = (
-                    "# Guia Personalizado para Consulta sobre Menopausa\n\n"
-                    "## 📋 Informações da Paciente\n"
-                    "Informações não fornecidas.\n\n"
-                    "## 🔍 Resumo da Situação Atual\n"
-                    "Este guia foi criado para ajudá-la a preparar sua consulta médica sobre menopausa.\n\n"
-                    "## 🩺 Sintomas e Observações\n"
-                    "- Sintomas não especificados\n\n"
-                    "## ❓ Perguntas Importantes para o Médico\n"
-                    "1. Quais são os sintomas mais comuns da menopausa?\n"
-                    "2. Quais tratamentos estão disponíveis para mim?\n"
-                    "3. Como posso melhorar minha qualidade de vida durante este período?\n"
-                    "4. Existem mudanças no estilo de vida que você recomenda?\n"
-                    "5. Quando devo retornar para acompanhamento?\n\n"
-                    "## 💡 Recomendações de Bem-Estar\n"
-                    "- Mantenha uma alimentação equilibrada rica em cálcio e vitamina D\n"
-                    "- Pratique exercícios físicos regularmente\n"
-                    "- Cuide da saúde mental e busque apoio quando necessário\n"
-                    "- Mantenha-se hidratada\n\n"
-                    "## 📌 Próximos Passos\n"
-                    "- Anote qualquer sintoma novo antes da consulta\n"
-                    "- Leve este guia impresso ou em formato digital\n"
-                    "- Não hesite em fazer todas as suas perguntas ao médico\n\n"
-                    "---\n"
-                    "*Este guia foi gerado para auxiliar na preparação da sua consulta médica.*"
-                )
-                
-                full_response = (
-                    f"[INICIO_GUIA]\n{fallback_guide_content}\n[FIM_GUIA]\n\n"
-                    "Pronto! Seu guia personalizado foi gerado com sucesso! 📋✨ "
-                    "Gostaria que eu enviasse este guia para o seu email?"
-                )
-                
-                response = AIMessage(content=full_response)
+            # Normaliza o conteúdo AQUI antes de qualquer outra coisa
+            content = normalize_content(response.content)
+            # Atualiza o objeto response para que o app receba string limpa também
+            response.content = content 
             
-            content = response.content
             guide_content = content
-            
             if "[INICIO_GUIA]" in content and "[FIM_GUIA]" in content:
-                start_idx = content.find("[INICIO_GUIA]") + len("[INICIO_GUIA]")
-                end_idx = content.find("[FIM_GUIA]")
-                guide_content = content[start_idx:end_idx].strip()
+                try:
+                    start_idx = content.find("[INICIO_GUIA]") + len("[INICIO_GUIA]")
+                    end_idx = content.find("[FIM_GUIA]")
+                    guide_content = content[start_idx:end_idx].strip()
+                except:
+                    guide_content = content
             
-            if "user_data" not in state:
-                state["user_data"] = {}
+            if "user_data" not in state: state["user_data"] = {}
+            # Salva STR, não LISTA.
             state["user_data"]["guide"] = guide_content
 
             return {
@@ -268,13 +216,10 @@ def create_agent_graph(checkpointer=None): #Todo
             }
         
         except Exception as e:
-            #print(f"[ERROR] Erro ao gerar guia: {str(e)}")
-           
-            error_message = AIMessage(
-                content=f"Desculpe, houve um problema ao gerar o guia. Por favor, tente novamente mais tarde. Se o problema persistir, entre em contato com o suporte."
-            )
+            error_msg = f"Erro técnico ao gerar guia: {str(e)}"
+            print(f"[ERROR AGENT] {error_msg}") 
             return {
-                "messages": [error_message],
+                "messages": [AIMessage(content=f"❌ {error_msg}")],
                 "user_data": state.get("user_data", {})
             }
 
@@ -292,8 +237,6 @@ def create_agent_graph(checkpointer=None): #Todo
     graph.add_node("generate_guide", generate_guide)
 
 
-
-   
     # Definição de arestas
     graph.add_edge("welcome_node", END)
 
@@ -305,40 +248,24 @@ def create_agent_graph(checkpointer=None): #Todo
 
     graph.add_conditional_edges("router_node", route_condition)
 
-    # Fluxo Chat (OTIMIZADO)
-    # Aqui removemos a lógica de avaliação. Se usar tool, vai pra tool. Se não, encerra a rodada.
-    graph.add_conditional_edges(
-        "chat_node", 
-        tools_condition, 
-        {"tools": "tools_chat", "__end__": END}
-    )
+    graph.add_conditional_edges("chat_node", tools_condition, {"tools": "tools_chat", "__end__": END})
     graph.add_edge("tools_chat", "chat_node")
-
-    # Fluxo Guia (Linear)
     graph.add_edge("guide_node", "personal_questions")
     graph.add_edge("personal_questions", "health_questions")
     graph.add_edge("health_questions", "show_user_data_node")
     graph.add_edge("show_user_data_node", "ask_confirmation")
 
-
-
     def data_condition(state: StateSchema) -> Literal["personal_questions", "generate_guide"]:
-        if state.get("confirmation"):
-            return "generate_guide"
-        return "personal_questions"
+        return "generate_guide" if state.get("confirmation") else "personal_questions"
 
     graph.add_conditional_edges("ask_confirmation", data_condition)
-    def welcome_condition(state:  StateSchema) -> Literal["router_node", "welcome_node"]:
-
-        if len(state["messages"]) <= 1:
-            return "welcome_node"
-        else:
-            return "router_node"
+    
+    def welcome_condition(state: StateSchema) -> Literal["router_node", "welcome_node"]:
+        return "welcome_node" if len(state["messages"]) <= 1 else "router_node"
 
     graph.add_conditional_edges(START, welcome_condition)
-
     graph.add_edge("generate_guide", END)
 
-    return graph.compile(checkpointer=checkpointer) #Todo
+    return graph.compile(checkpointer=checkpointer)
 
 graph = create_agent_graph()
