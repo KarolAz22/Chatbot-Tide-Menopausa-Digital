@@ -13,6 +13,7 @@ class StateSchema(TypedDict):
     user_data: Optional[Dict[str, Any]]
     debug: Optional[Any]
     confirmation: Optional[bool]
+    exit_guide: Optional[bool]
     
     # Campos para avaliação e reformulação de respostas
     pass_evaluation: Optional[bool]

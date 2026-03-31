@@ -5,9 +5,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from datetime import datetime
 from io import BytesIO
+from langchain_cerebras import ChatCerebras
 import markdown
 from weasyprint import HTML
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.tools import tool, ToolRuntime
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
@@ -62,16 +63,23 @@ def get_llm():
     """Retorna a instância única do LLM."""
     global _llm_instance
     if _llm_instance is None:
-        print("[SISTEMA] Iniciando LLM Gemini...")
-        _llm_instance = ChatGoogleGenerativeAI(
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            model=MODEL_NAME,
-            temperature=0,
-            max_tokens=2048,
-            timeout=None,
-            max_retries=1,
-            transport="rest"            
-        )
+        # print("[SISTEMA] Iniciando LLM Gemini...")
+        # _llm_instance = ChatGoogleGenerativeAI(
+        #     api_key=os.getenv("GOOGLE_API_KEY"),
+        #     model=MODEL_NAME,
+        #     temperature=0,
+        #     max_tokens=2048,
+        #     timeout=None,
+        #     max_retries=1,           
+        # )
+        _llm_instance = ChatCerebras(
+        temperature=0,
+        model_name="gpt-oss-120b",
+        api_key= os.getenv("CEREBRAS_API_KEY"),
+        max_retries=3,
+        timeout=None
+    )
+
     return _llm_instance
 
 
@@ -86,23 +94,23 @@ def normalize(vec):
 
 def get_embedding(text: str):
     """Gera o embedding usando a instância Singleton."""
-    model = get_embedding_model() # <--- Chama o Singleton aqui
+    model = get_embedding_model()
     
     if GEMINI_EMBEDD:
-        EMBEDDING_MODEL_NAME = "text-embedding-004"
-        result = model.models.embed_content(
-            model=EMBEDDING_MODEL_NAME,
-            contents=[text],
-            config=genai.types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT",
-                output_dimensionality=EMBED_DIM
-            )
+        # 1. Inicializa o gerador de embeddings nativo
+        embeddings_model = GoogleGenerativeAIEmbeddings(
+            model="gemini-embedding-001",
+            task_type="retrieval_query"
         )
-        return normalize(result.embeddings[0].values)
+        
+        # 2. Gera o vetor da pergunta de forma segura
+        vetor = embeddings_model.embed_query(text)
+        
+        # 3. Retorna o vetor normalizado, conforme sua lógica original
+        return normalize(vetor)
+        
     else:
-        # Se for SentenceTransformer
         return model.encode(text).tolist()
-
 # --- Ferramentas (Tools) ---
 
 @tool

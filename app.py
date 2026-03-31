@@ -20,26 +20,29 @@ except Exception:
 
 st.set_page_config(page_title="Tide - Menopausa Digital", page_icon="🌸", layout="centered")
 
+# --- VERIFICAÇÃO DE CHAVES ---
 missing_keys = [k for k in REQUIRED_KEYS if not os.getenv(k)]
 if missing_keys:
     st.error(f"⚠️ Erro: Chaves faltando: {', '.join(missing_keys)}")
     st.stop()
 
-# --- ESTADO ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.title("🌸 Tide: Seu Guia Digital da Menopausa")
 
-if "thread_id" not in st.session_state:
-    st.session_state.thread_id = str(uuid4())
-if "graph" not in st.session_state:
-    memory = InMemorySaver()
-    st.session_state.graph = create_agent_graph(checkpointer=memory)
+# --- GERENCIAMENTO DE SESSÃO ---
+def iniciar_sessao_usuario():
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = str(uuid4())
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "graph" not in st.session_state:
+        memory = InMemorySaver()
+        st.session_state.graph = create_agent_graph(checkpointer=memory)
+
+iniciar_sessao_usuario()
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
-st.title("🌸 Tide: Seu Guia Digital da Menopausa")
-
-# --- HISTÓRICO ---
+# --- HISTÓRICO VISUAL ---
 for message in st.session_state.messages:
     if message.get("role") == "tool_log":
         with st.status(message["content"], state="complete"):
@@ -48,8 +51,9 @@ for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# --- EXECUÇÃO ---
+# --- EXECUÇÃO DO GRAFO (RETORNA SUCESSO/ERRO) ---
 def run_graph(input_data):
+    """Executa o grafo e retorna True se funcionou, False se deu erro."""
     with st.chat_message("assistant"):
         status_container = st.status("Processando...", expanded=True)
         response_text = ""
@@ -73,15 +77,9 @@ def run_graph(input_data):
                     if isinstance(last_message, AIMessage) and last_message.content:
                         if not last_message.tool_calls:
                             raw_content = last_message.content
-                            
-                            # PROTEÇÃO: Garante que dicionários virem texto antes de exibir
                             if isinstance(raw_content, list):
-                                text_parts = []
-                                for item in raw_content:
-                                    if isinstance(item, dict) and 'text' in item:
-                                        text_parts.append(item['text'])
-                                    elif isinstance(item, str):
-                                        text_parts.append(item)
+                                # Extrai o texto se for dicionário, ou pega o próprio item se for string
+                                text_parts = [item.get('text', '') if isinstance(item, dict) else item for item in raw_content if isinstance(item, (dict, str))]
                                 raw_content = "".join(text_parts)
                             
                             raw_content = str(raw_content)
@@ -95,10 +93,13 @@ def run_graph(input_data):
                 st.markdown(response_text)
                 if not st.session_state.messages or st.session_state.messages[-1].get("content") != response_text:
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
-                    
+            
+            return True
+
         except Exception as e:
             status_container.update(label="Erro na execução", state="error")
             st.error(f"Detalhe do erro: {e}")
+            return False
 
 # --- INTERFACE DINÂMICA ---
 try:
@@ -107,53 +108,80 @@ try:
     if state_snapshot.next:
         current_node = state_snapshot.next[0] if isinstance(state_snapshot.next, tuple) else state_snapshot.next
         
-        # === FORMULÁRIOS ===
+        # === FORMULÁRIO 1: DADOS PESSOAIS ===
         if current_node == "personal_questions":
             with st.chat_message("assistant"):
                 st.write("📝 **Preciso de alguns dados para continuar:**")
                 with st.form("form_pessoal"):
-                    nome = st.text_input("Qual é seu nome?")
-                    idade = st.text_input("Qual é sua idade?") 
-                    email = st.text_input("Qual é o seu email?")
-                    if st.form_submit_button("Enviar Dados"):
+                    # Inputs com chaves fixas para evitar perda de foco
+                    nome = st.text_input("Qual é seu nome?", key="input_nome")
+                    idade = st.text_input("Qual é sua idade?", key="input_idade") 
+                    email = st.text_input("Qual é o seu email?", key="input_email")
+                    
+                    col_env, col_sair = st.columns([1, 1])
+                    with col_env:
+                        submit = st.form_submit_button("Enviar Dados", use_container_width=True)
+                    with col_sair:
+                        cancel = st.form_submit_button("Sair do Guia", type="secondary", use_container_width=True)
+
+                    # Lógica de processamento
+                    if cancel:
+                        if run_graph(Command(resume={"exit": True})):
+                            st.rerun()
+                    
+                    elif submit:
                         if not nome or not idade or not email:
                             st.warning("⚠️ Preencha todos os campos.")
                         else:
-                            run_graph(Command(resume={"nome": nome, "idade": str(idade), "email": email}))
-                            st.rerun()
+                            # Só faz o rerun se o run_graph retornar True (sucesso)
+                            if run_graph(Command(resume={"nome": nome, "idade": str(idade), "email": email})):
+                                st.rerun()
 
+        # === FORMULÁRIO 2: SAÚDE ===
         elif current_node == "health_questions":
              with st.chat_message("assistant"):
                 st.write("🩺 **Sobre sua saúde:**")
                 with st.form("form_saude"):
-                    c1 = st.text_area("Ciclo Menstrual", placeholder="Frequência, fluxo...")
-                    c2 = st.text_area("Sintomas Físicos", placeholder="Calorões, insônia...")
-                    c3 = st.text_area("Saúde Emocional", placeholder="Ansiedade, humor...")
-                    c4 = st.text_area("Histórico e Hábitos", placeholder="Medicamentos, histórico familiar...")
-                    c5 = st.text_area("Exames e Tratamentos", placeholder="Últimos exames...")
+                    c1 = st.text_area("Ciclo Menstrual", placeholder="Frequência, fluxo...", key="input_c1")
+                    c2 = st.text_area("Sintomas Físicos", placeholder="Calorões, insônia...", key="input_c2")
+                    c3 = st.text_area("Saúde Emocional", placeholder="Ansiedade, humor...", key="input_c3")
+                    c4 = st.text_area("Histórico e Hábitos", placeholder="Medicamentos, histórico familiar...", key="input_c4")
+                    c5 = st.text_area("Exames e Tratamentos", placeholder="Últimos exames...", key="input_c5")
                     
-                    if st.form_submit_button("Gerar Guia"):
+                    col_env, col_sair = st.columns([1, 1])
+                    with col_env:
+                        submit = st.form_submit_button("Gerar Guia", use_container_width=True)
+                    with col_sair:
+                        cancel = st.form_submit_button("Sair do Guia", type="secondary", use_container_width=True)
+
+                    if cancel:
+                        if run_graph(Command(resume={"exit": True})):
+                            st.rerun()
+
+                    elif submit:
                         if not all([c1, c2, c3, c4]):
-                            st.warning("⚠️ Preencha os campos.")
+                            st.warning("⚠️ Preencha os campos obrigatórios (os 4 primeiros).")
                         else:
-                            run_graph(Command(resume={
+                            if run_graph(Command(resume={
                                 "ciclo_menstrual": c1, "sintomas_fisicos": c2,
                                 "saude_emocional": c3, "habitos_historico": c4,
                                 "exames_tratamentos": c5
-                            }))
-                            st.rerun()
+                            })):
+                                st.rerun()
 
+        # === CONFIRMAÇÃO ===
         elif current_node == "ask_confirmation":
              with st.chat_message("assistant"):
                 st.info("As informações acima estão corretas?")
                 col1, col2 = st.columns(2)
-                if col1.button("✅ Sim, Gerar Guia"):
-                    run_graph(Command(resume={"confirmation": True}))
-                    st.rerun()
-                if col2.button("❌ Corrigir"):
-                    run_graph(Command(resume={"confirmation": False}))
-                    st.rerun()
+                if col1.button("✅ Sim, Gerar Guia", use_container_width=True):
+                    if run_graph(Command(resume={"confirmation": True})):
+                        st.rerun()
+                if col2.button("❌ Corrigir", use_container_width=True):
+                    if run_graph(Command(resume={"confirmation": False})):
+                        st.rerun()
     else:
+        # Chat normal
         if prompt := st.chat_input("Tire suas dúvidas sobre menopausa..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
@@ -161,6 +189,7 @@ try:
             run_graph({"messages": [HumanMessage(content=prompt)]})
 
 except Exception:
+    # Primeira execução
     if prompt := st.chat_input("Diga 'Olá' para começar"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):

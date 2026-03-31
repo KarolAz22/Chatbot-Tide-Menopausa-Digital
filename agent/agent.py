@@ -8,25 +8,43 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
+from langchain_cerebras import ChatCerebras
+from langchain_groq import ChatGroq
+from langchain_openai import OpenAI
 
 from agent.utils.prompt import CHAT_SYSTEM_PROMPT, WELCOME_MESSAGE, ROUTER_PROMPT, GUIDE_SYSTEM_PROMPT
 from agent.utils.state import StateSchema
 from agent.utils.tools import TOOLS_CHAT
 
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-2.5-flash"
 
 def create_agent_graph(checkpointer=None):
 
     # Configuração do LLM
-    llm = ChatGoogleGenerativeAI(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        model=MODEL_NAME,
+    # llm = ChatGoogleGenerativeAI(
+    #     api_key=os.getenv("GOOGLE_API_KEY"),
+    #     model=MODEL_NAME,
+    #     temperature=0,
+    #     max_tokens=20000,
+    #     timeout=None,
+    #     max_retries=1,
+    # )
+
+    llm = ChatGroq(
         temperature=0,
-        max_tokens=20000,
-        timeout=None,
-        max_retries=1,
-        transport="rest" 
+        model_name="openai/gpt-oss-120b",
+        api_key= os.getenv("GROQ_API_KEY"),
+        max_retries=3,
+        timeout=None
     )
+
+    # llm = ChatCerebras(
+    #     temperature=0,
+    #     model="gpt-oss-120b",
+    #     api_key=os.getenv("CEREBRAS_API_KEY"),
+    #     max_retries=3,
+    #     timeout=None
+    # )
 
     graph = StateGraph(state_schema=StateSchema)
 
@@ -89,6 +107,13 @@ def create_agent_graph(checkpointer=None):
             "3. Qual é o seu email? (Usaremos para enviar o guia personalizado)\n\n"
         )
         answer = interrupt(questions_prompt)
+
+        if answer.get("exit"):
+            return {
+                "exit_guide": True,
+                "messages": [AIMessage(content="Entendido! Cancelei a criação do guia. Se quiser tentar novamente ou conversar sobre outro assunto, estou por aqui!")]
+            }
+        
         user_data["nome"] = answer.get("nome", "Não informado")
         user_data["idade"] = answer.get("idade", "Não informado")
         user_data["email"] = answer.get("email", "Não informado")
@@ -116,6 +141,12 @@ def create_agent_graph(checkpointer=None):
         )
 
         answer = interrupt(questions_prompt)
+
+        if answer.get("exit"):
+            return {
+                "exit_guide": True,
+                "messages": [AIMessage(content="Entendido! Cancelei a criação do guia. Se quiser tentar novamente ou conversar sobre outro assunto, estou por aqui!")]
+            }
 
         user_data["ciclo_menstrual"] = answer.get("ciclo_menstrual", "Não informado")
         user_data["sintomas_fisicos"] = answer.get("sintomas_fisicos", "Não informado")
@@ -251,8 +282,25 @@ def create_agent_graph(checkpointer=None):
     graph.add_conditional_edges("chat_node", tools_condition, {"tools": "tools_chat", "__end__": END})
     graph.add_edge("tools_chat", "chat_node")
     graph.add_edge("guide_node", "personal_questions")
-    graph.add_edge("personal_questions", "health_questions")
-    graph.add_edge("health_questions", "show_user_data_node")
+
+    # Condição para verificar se o usuário saiu
+    def check_exit(state: StateSchema) -> Literal["continue", "end"]:
+        if state.get("exit_guide"):
+            return "end"
+        return "continue"
+    
+    graph.add_conditional_edges(
+        "personal_questions",
+        check_exit,
+        {"continue": "health_questions", "end": END}
+    )
+
+    graph.add_conditional_edges(
+        "health_questions",
+        check_exit,
+        {"continue": "show_user_data_node", "end": END}
+    )
+    
     graph.add_edge("show_user_data_node", "ask_confirmation")
 
     def data_condition(state: StateSchema) -> Literal["personal_questions", "generate_guide"]:
@@ -263,7 +311,8 @@ def create_agent_graph(checkpointer=None):
     def welcome_condition(state: StateSchema) -> Literal["router_node", "welcome_node"]:
         return "welcome_node" if len(state["messages"]) <= 1 else "router_node"
 
-    graph.add_conditional_edges(START, welcome_condition)
+    #graph.add_conditional_edges(START, welcome_condition) comentado para avaliação
+    graph.add_edge(START, "router_node")
     graph.add_edge("generate_guide", END)
 
     return graph.compile(checkpointer=checkpointer)
