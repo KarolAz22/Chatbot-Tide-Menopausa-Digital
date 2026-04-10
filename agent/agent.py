@@ -311,7 +311,7 @@ def create_agent_graph(checkpointer=None):
     def welcome_condition(state: StateSchema) -> Literal["router_node", "welcome_node"]:
         return "welcome_node" if len(state["messages"]) <= 1 else "router_node"
 
-    #graph.add_conditional_edges(START, welcome_condition) comentado para avaliação
+    graph.add_conditional_edges(START, welcome_condition) # comentar para modo avaliação
     graph.add_edge(START, "router_node")
     graph.add_edge("generate_guide", END)
 
