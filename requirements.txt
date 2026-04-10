@@ -20,3 +20,5 @@ streamlit
 protobuf>=5.26.1,<6.0.0
 langchain-cerebras
 cerebras-cloud-sdk
+langchain-groq
+groq
